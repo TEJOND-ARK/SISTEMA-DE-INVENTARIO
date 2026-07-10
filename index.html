@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AUTO-PARTS MARKET - Control de Inventario</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans min-h-screen pb-24">
+
+    <!-- Botón flotante de la cesta -->
+    <button id="btn-flotante-carrito" onclick="abrirModalCarrito()" class="fixed bottom-6 right-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full p-4 shadow-2xl flex items-center justify-center gap-2 z-40 transition transform hover:scale-105 active:scale-95 border border-indigo-500">
+        <i data-lucide="shopping-cart" class="w-6 h-6"></i>
+        <span id="badge-carrito" class="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full absolute -top-1 -right-1 shadow-md border border-white">0</span>
+    </button>
+
+    <!-- Barra de Navegación Superior -->
+    <div id="barra-superior-nav" class="hidden bg-white border-b border-slate-200 px-4 py-3 flex justify-between items-center sticky top-0 z-30 shadow-sm">
+        <h1 id="nombreBodegaTitulo" onclick="cambiarNombreBodega()" class="text-base md:text-lg font-bold text-indigo-600 flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition truncate max-w-[50%]"></h1>
+        
+        <div class="flex items-center gap-2">
+            <button class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold py-2 px-3 rounded-xl border border-slate-200 flex items-center gap-1.5 transition" onclick="alternarVistaAjustes()">
+                <span id="icono-menu-contenedor"><i data-lucide="sliders-horizontal" class="w-4 h-4"></i></span>
+                <span id="txt-boton-menu">Panel de Gestión</span>
+            </button>
+            <button class="bg-red-50 hover:bg-red-100 text-red-600 text-xs font-semibold py-2 px-3 rounded-xl border border-red-200 flex items-center gap-1.5 transition" onclick="cerrarSesion()">
+                <i data-lucide="log-out" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">Salir</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Contenedor Principal -->
+    <div id="contenedor-principal" class="max-w-3xl mx-auto px-3 mt-4 hidden">
+        
+        <!-- VISTA TERMINAL (DESPACHO VELOZ) -->
+        <div id="vista-inicio" class="vista-seccion space-y-4">
+            
+            <!-- Buscador y Catálogo de Repuestos -->
+            <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-col w-full">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+                        <i data-lucide="wrench" class="w-4 h-4 text-indigo-500"></i> Catálogo de Repuestos en Vivo
+                    </h3>
+                    <button onclick="abrirModalCarrito()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold py-1.5 px-3 rounded-xl flex items-center gap-1.5 transition">
+                        <i data-lucide="shopping-cart" class="w-3.5 h-3.5"></i>
+                        Ver Lista (<span id="total-rapido-txt">S/. 0.00</span>)
+                    </button>
+                </div>
+                
+                <div class="relative mb-3">
+                    <i data-lucide="scan-barcode" class="w-4 h-4 text-indigo-500 absolute left-3 top-3"></i>
+                    <input type="text" id="buscadorInicio" oninput="filtrarProductosInicio(this.value)" onkeydown="manejarEscaneoCodigo(event)" placeholder="Escanea el código de barra o busca por descripción..." class="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium" autofocus>
+                </div>
+                
+                <div class="lista-productos max-h-[400px] overflow-y-auto border border-slate-100 rounded-xl divide-y divide-slate-100 bg-white" id="listaProductosInicio"></div>
+            </div>
+        </div>
+
+        <!-- MODAL DE LA CESTA ACTUAL -->
+        <div id="modal-carrito" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl w-full max-w-md p-4 shadow-2xl flex flex-col max-h-[85vh] border border-slate-100">
+                <div class="flex justify-between items-center border-b border-slate-100 pb-2 mb-3">
+                    <h3 class="font-bold text-slate-900 text-base flex items-center gap-2">
+                        <i data-lucide="shopping-cart" class="text-indigo-600 w-5 h-5"></i> Repuestos a Descontar
+                    </h3>
+                    <button onclick="cerrarModalCarrito()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-50 transition">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
+                
+                <div id="carritoCuerpo" class="space-y-2 overflow-y-auto flex-1 pr-1 max-h-[40vh]"></div>
+                
+                <!-- MÉTODO DE PAGO -->
+                <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 mt-2">
+                    <label class="block text-xs font-bold text-slate-600 mb-1.5 uppercase">Método de Pago:</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <label class="flex items-center justify-center gap-2 bg-white border border-slate-200 p-2.5 rounded-xl cursor-pointer hover:bg-slate-100 transition select-none">
+                            <input type="radio" name="metodoPago" value="EFECTIVO" checked class="text-indigo-600 focus:ring-indigo-500">
+                            <span class="text-xs font-bold text-slate-700">💵 Efectivo</span>
+                        </label>
+                        <label class="flex items-center justify-center gap-2 bg-white border border-slate-200 p-2.5 rounded-xl cursor-pointer hover:bg-slate-100 transition select-none">
+                            <input type="radio" name="metodoPago" value="YAPE" class="text-indigo-600 focus:ring-indigo-500">
+                            <span class="text-xs font-bold text-slate-700">📱 Yape</span>
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="border-t border-slate-100 pt-3 mt-2 space-y-3">
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs font-bold text-slate-500 uppercase">Valor Total Estimado:</span>
+                        <span class="text-2xl font-black text-slate-900" id="carritoTotalLabel">S/. 0.00</span>
+                    </div>
+                    <button onclick="procesarDescuentoStock()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl text-sm flex items-center justify-center gap-2 transition shadow shadow-indigo-100">
+                        <i data-lucide="refresh-cw" class="w-4 h-4"></i> Confirmar y Salida de Stock
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- PANEL DE GESTIÓN -->
+        <div id="vista-ajustes" class="vista-seccion hidden space-y-4">
+            
+            <!-- CONTADOR LOCAL DE VENTAS DEL DÍA Y CIERRE -->
+            <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <h3 class="text-xs font-bold text-slate-900 mb-2 flex items-center gap-1.5 uppercase tracking-wide">
+                        <i data-lucide="calculator" class="text-indigo-600 w-4 h-4"></i> Caja Temporal (En Pantalla)
+                    </h3>
+                    <div class="bg-amber-50/50 border border-amber-200 rounded-xl p-3 space-y-1 text-xs mb-3">
+                        <div class="flex justify-between font-medium"><span>💵 Efectivo acumulado:</span><span class="font-bold text-slate-900" id="local-efectivo">S/. 0.00</span></div>
+                        <div class="flex justify-between font-medium"><span>📱 Yape acumulado:</span><span class="font-bold text-slate-900" id="local-yape">S/. 0.00</span></div>
+                        <hr class="border-amber-200 my-1">
+                        <div class="flex justify-between text-sm font-black text-amber-700"><span>💰 Total Acumulado:</span><span id="local-total">S/. 0.00</span></div>
+                    </div>
+                    
+                    <button onclick="ejecutarCierreCajaFirebase()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1.5 transition shadow-sm">
+                        <i data-lucide="save" class="w-4 h-4"></i> Guardar y Cerrar Caja del Día
+                    </button>
+                </div>
+                
+                <div>
+                    <h3 class="text-xs font-bold text-slate-900 mb-2 flex items-center gap-1.5 uppercase tracking-wide">
+                        <i data-lucide="history" class="text-emerald-600 w-4 h-4"></i> Último Cierre Guardado
+                    </h3>
+                    <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 h-full flex flex-col justify-center text-center">
+                        <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider" id="fecha-ultimo-cierre">Sin registros hoy</span>
+                        <div id="monto-ultimo-cierre" class="my-1">
+                            <h4 class="text-2xl font-black text-slate-800">S/. 0.00</h4>
+                        </div>
+                        <p class="text-[9px] text-emerald-600 font-medium bg-emerald-50 py-0.5 px-2 rounded-full mx-auto mt-1">Cerrado de forma segura en la nube</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ALTA DE NUEVOS REPUESTOS -->
+            <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
+                <h2 class="text-sm font-bold text-slate-900 mb-3 flex items-center gap-1.5">
+                    <i data-lucide="plus-circle" class="w-4 h-4 text-indigo-500"></i> Agregar Nuevo Repuesto al Catálogo
+                </h2>
+                <div class="space-y-3">
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-0.5">Código Único (SKU / Barra):</label>
+                            <input type="text" id="regCodigo" placeholder="Ej. BOS-1025" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold uppercase">
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-600 mb-0.5">Nombre / Descripción del Artículo:</label>
+                            <input type="text" id="regNombre" placeholder="Ej. Pastilla de Freno Delantera" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
+                        <label class="inline-flex items-center gap-2 cursor-pointer select-none">
+                            <input type="checkbox" id="checkEsRepuesto" onchange="alternarVisibilidadModelos(this.checked)" class="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500">
+                            <span class="text-xs font-semibold text-slate-700">¿Asignar a una marca o vehículo específico?</span>
+                        </label>
+                        <div id="contenedorSelectorModelos" class="hidden pt-1">
+                            <label class="block text-[11px] font-bold text-indigo-600 uppercase mb-1">Modelo / Aplicación:</label>
+                            <input type="text" id="regModelo" placeholder="Ej. Toyota Yaris 2015-2020" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-0.5">Precio de Venta (S/.):</label>
+                            <input type="number" id="regPrecio" step="0.01" placeholder="0.00" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-0.5">Stock Inicial:</label>
+                            <input type="number" id="regStock" value="10" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                    </div>
+                    <button class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-sm transition" onclick="registrarProducto()">Guardar en Inventario</button>
+                </div>
+            </div>
+
+            <!-- TABLA DE INVENTARIO EN VIVO EDITABLE -->
+            <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
+                <h2 class="text-sm font-bold text-slate-900 mb-3 flex items-center gap-1.5">
+                    <i data-lucide="boxes" class="w-4 h-4 text-indigo-500"></i> Almacén / Edición Rápida en Tabla
+                </h2>
+                <div class="overflow-x-auto rounded-xl border border-slate-100">
+                    <table class="w-full text-xs text-left min-w-[460px]">
+                        <thead class="bg-slate-50 text-slate-500 uppercase">
+                            <tr>
+                                <th class="p-3 w-28">Código</th>
+                                <th class="p-3">Descripción</th>
+                                <th class="p-3 text-center">Modelo</th>
+                                <th class="p-3">Precio</th>
+                                <th class="p-3">Stock</th>
+                                <th class="p-3 text-right">Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tablaAjustesInventario" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBJKdcy6awuDMuBDOlhGiNLRYqjTzPdx_E",
+            authDomain: "web-anonima-d7b3c.firebaseapp.com",
+            projectId: "web-anonima-d7b3c",
+            storageBucket: "web-anonima-d7b3c.firebasestorage.app",
+            messagingSenderId: "212970847778",
+            appId: "1:212970847778:web:4d9783171719912dc9147b",
+            measurementId: "G-SGL2WSXBN2"
+        };
+        
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+
+        document.addEventListener('contextmenu', e => e.preventDefault());
+
+        let CARRITO_ACTUAL = [];
+        let INVENTARIO_LOCAL = [];
+        let NOMBRE_BODEGA_LOCAL = "Auto-Parts Market";
+        let usuarioActualUid = null;
+
+        let CAJA_LOCAL = { efectivo: 0, yape: 0 };
+
+        auth.onAuthStateChanged((user) => {
+            if (user) {
+                usuarioActualUid = user.uid;
+                document.getElementById('barra-superior-nav').classList.remove('hidden');
+                document.getElementById('contenedor-principal').classList.remove('hidden');
+                
+                const guardado = localStorage.getItem(`caja_temporal_${usuarioActualUid}`);
+                if (guardado) CAJA_LOCAL = JSON.parse(guardado);
+
+                inicializarEscuchasTiempoReal();
+            } else {
+                window.location.href = "login.html";
+            }
+        });
+
+        function alternarVisibilidadModelos(activado) {
+            const contenedor = document.getElementById("contenedorSelectorModelos");
+            if (activado) contenedor.classList.remove("hidden");
+            else contenedor.classList.add("hidden");
+        }
+
+        function obtenerFechaID() {
+            const d = new Date();
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+
+        function inicializarEscuchasTiempoReal() {
+            if(!usuarioActualUid) return;
+
+            db.collection("configuracion").doc(usuarioActualUid).onSnapshot((doc) => {
+                if(doc.exists) NOMBRE_BODEGA_LOCAL = doc.data().nombre || "Auto-Parts Market";
+                actualizarInterfaz();
+            });
+
+            db.collection("inventario").where("userId", "==", usuarioActualUid).onSnapshot((snapshot) => {
+                INVENTARIO_LOCAL = [];
+                snapshot.forEach(doc => { 
+                    let d = doc.data();
+                    INVENTARIO_LOCAL.push({ 
+                        idDoc: doc.id, 
+                        codigo: d.codigo || "",
+                        nombre: d.nombre || "",
+                        precio: d.precio || "0.00",
+                        stock: d.stock !== undefined ? d.stock : 0,
+                        modelo: d.modelo || "N/A"
+                    }); 
+                });
+                const buscarTxt = document.getElementById("buscadorInicio") ? document.getElementById("buscadorInicio").value : "";
+                mostrarProductosVenta(buscarTxt);
+                if(!document.getElementById('vista-ajustes').classList.contains('hidden')) mostrarInventarioAjustes();
+            });
+
+            // Escuchar el último cierre subido con desglose de métodos de pago
+            db.collection("cierres_diarios").doc(`${usuarioActualUid}_${obtenerFechaID()}`).onSnapshot((doc) => {
+                if (doc.exists) {
+                    let d = doc.data();
+                    document.getElementById("fecha-ultimo-cierre").innerText = `Cierre de fecha: ${d.fechaId}`;
+                    document.getElementById("monto-ultimo-cierre").innerHTML = `
+                        <div class="text-2xl font-black text-slate-800 mb-2">S/. ${parseFloat(d.totalCierre || 0).toFixed(2)}</div>
+                        <div class="text-[11px] text-slate-500 space-y-0.5 font-medium border-t border-slate-200 pt-1.5 max-w-[180px] mx-auto text-left">
+                            <div class="flex justify-between"><span>💵 Efectivo:</span> <span class="font-bold text-slate-700">S/. ${parseFloat(d.totalEfectivo || 0).toFixed(2)}</span></div>
+                            <div class="flex justify-between"><span>📱 Yape:</span> <span class="font-bold text-slate-700">S/. ${parseFloat(d.totalYape || 0).toFixed(2)}</span></div>
+                        </div>
+                    `;
+                } else {
+                    document.getElementById("fecha-ultimo-cierre").innerText = "Sin cierres hoy";
+                    document.getElementById("monto-ultimo-cierre").innerHTML = `<h4 class="text-2xl font-black text-slate-800">S/. 0.00</h4>`;
+                }
+            });
+
+            renderizarCajaLocalPantalla();
+        }
+
+        function renderizarCajaLocalPantalla() {
+            document.getElementById("local-efectivo").innerText = `S/. ${CAJA_LOCAL.efectivo.toFixed(2)}`;
+            document.getElementById("local-yape").innerText = `S/. ${CAJA_LOCAL.yape.toFixed(2)}`;
+            let total = CAJA_LOCAL.efectivo + CAJA_LOCAL.yape;
+            document.getElementById("local-total").innerText = `S/. ${total.toFixed(2)}`;
+        }
+
+        function alternarVistaAjustes() {
+            let panel = document.getElementById('vista-ajustes');
+            let btnTxt = document.getElementById('txt-boton-menu');
+            let btnIcono = document.getElementById('icono-menu-contenedor');
+            cerrarModalCarrito();
+            
+            if(panel.classList.contains('hidden')) {
+                document.getElementById('vista-inicio').classList.add('hidden');
+                panel.classList.remove('hidden');
+                btnTxt.innerText = "Ver Terminal Venta";
+                btnIcono.innerHTML = `<i data-lucide="layout-dashboard" class="w-4 h-4"></i>`;
+                mostrarInventarioAjustes();
+                renderizarCajaLocalPantalla();
+            } else {
+                panel.classList.add('hidden');
+                document.getElementById('vista-inicio').classList.remove('hidden');
+                btnTxt.innerText = "Panel de Gestión";
+                btnIcono.innerHTML = `<i data-lucide="sliders-horizontal" class="w-4 h-4"></i>`;
+                actualizarInterfaz();
+            }
+            try { lucide.createIcons(); } catch(e){}
+        }
+
+        async function procesarDescuentoStock() {
+            CARRITO_ACTUAL = CARRITO_ACTUAL.filter(item => item && item.cantidad > 0);
+            if(CARRITO_ACTUAL.length === 0) {
+                Swal.fire({ icon: 'warning', title: 'Lista Vacía', text: 'Selecciona repuestos primero.', confirmButtonColor: '#4f46e5' }); return;
+            }
+
+            const metodoSeleccionado = document.querySelector('input[name="metodoPago"]:checked').value;
+
+            for (let item of CARRITO_ACTUAL) {
+                let pInv = INVENTARIO_LOCAL.find(i => i.idDoc === item.idDoc);
+                if(!pInv || parseInt(pInv.stock) < item.cantidad) {
+                    Swal.fire({ icon: 'error', title: 'Conflicto de Stock', text: `El repuesto ${item.nombre} no tiene stock suficiente.`, confirmButtonColor: '#dc2626' });
+                    return;
+                }
+            }
+
+            try {
+                let batch = db.batch();
+                let subtotalVenta = 0;
+
+                CARRITO_ACTUAL.forEach(item => {
+                    let docRef = db.collection("inventario").doc(item.idDoc);
+                    let pInv = INVENTARIO_LOCAL.find(i => i.idDoc === item.idDoc);
+                    let nuevoStock = parseInt(pInv.stock) - parseInt(item.cantidad);
+                    batch.update(docRef, { stock: nuevoStock < 0 ? 0 : nuevoStock });
+                    
+                    subtotalVenta += parseFloat(item.precio) * item.cantidad;
+                });
+
+                await batch.commit();
+
+                if (metodoSeleccionado === "EFECTIVO") {
+                    CAJA_LOCAL.efectivo += subtotalVenta;
+                } else {
+                    CAJA_LOCAL.yape += subtotalVenta;
+                }
+
+                localStorage.setItem(`caja_temporal_${usuarioActualUid}`, JSON.stringify(CAJA_LOCAL));
+
+                CARRITO_ACTUAL = [];
+                document.getElementById("buscadorInicio").value = "";
+                cerrarModalCarrito();
+                actualizarInterfaz();
+                renderizarCajaLocalPantalla();
+                
+                Swal.fire({ icon: 'success', title: 'Venta Procesada', text: `Sumado a caja temporal. Stock descontado.`, timer: 1500, showConfirmButton: false });
+            } catch (err) {
+                Swal.fire({ icon: 'error', title: 'Error', text: err.message });
+            }
+        }
+
+        async function ejecutarCierreCajaFirebase() {
+            let totalAcumulado = CAJA_LOCAL.efectivo + CAJA_LOCAL.yape;
+            if(totalAcumulado <= 0) {
+                Swal.fire({ icon: 'info', title: 'Caja Vacía', text: 'No tienes ventas acumuladas en pantalla para cerrar hoy.' }); return;
+            }
+
+            let confirmar = await Swal.fire({
+                title: '¿Confirmar Cierre de Caja?',
+                text: `Se guardará en la nube un total de S/. ${totalAcumulado.toFixed(2)} y el contador de pantalla se reiniciará.`,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#4f46e5',
+                cancelButtonColor: '#64748b'
+            });
+
+            if(confirmar.isConfirmed) {
+                try {
+                    const fechaId = obtenerFechaID();
+                    await db.collection("cierres_diarios").doc(`${usuarioActualUid}_${fechaId}`).set({
+                        userId: usuarioActualUid,
+                        fechaId: fechaId,
+                        totalEfectivo: CAJA_LOCAL.efectivo,
+                        totalYape: CAJA_LOCAL.yape,
+                        totalCierre: totalAcumulado,
+                        fechaRegistro: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+
+                    CAJA_LOCAL = { efectivo: 0, yape: 0 };
+                    localStorage.removeItem(`caja_temporal_${usuarioActualUid}`);
+                    
+                    renderizarCajaLocalPantalla();
+                    Swal.fire({ icon: 'success', title: '¡Caja Cerrada con Éxito!', text: 'Los datos ya están guardados permanentemente en Firebase.' });
+                } catch(e) {
+                    Swal.fire({ icon: 'error', title: 'Error al subir cierre', text: e.message });
+                }
+            }
+        }
+
+        function actualizarInterfaz() {
+            try {
+                document.getElementById("nombreBodegaTitulo").innerHTML = `<i data-lucide="store" class="w-4 h-4"></i> <span class="uppercase font-bold tracking-tight">${NOMBRE_BODEGA_LOCAL}</span>`;
+                const buscarTxt = document.getElementById("buscadorInicio") ? document.getElementById("buscadorInicio").value : "";
+                mostrarProductosVenta(buscarTxt);
+                renderizarCarrito();
+                lucide.createIcons();
+            } catch (e) { console.error(e); }
+        }
+
+        function manejarEscaneoCodigo(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const codigoEscaneado = e.target.value.trim().toUpperCase();
+                if(codigoEscaneado === "") return;
+
+                const productoEncontrado = INVENTARIO_LOCAL.find(p => p.codigo.toUpperCase() === codigoEscaneado);
+
+                if (productoEncontrado) {
+                    if(parseInt(productoEncontrado.stock) > 0) {
+                        agregarAlCarrito(productoEncontrado);
+                        e.target.value = ""; 
+                        mostrarProductosVenta("");
+                    } else {
+                        Swal.fire({ icon: 'warning', title: 'Sin Stock', text: `El repuesto ${productoEncontrado.nombre} no tiene existencias.`, timer: 1500, showConfirmButton: false });
+                        e.target.value = "";
+                    }
+                } else {
+                    Swal.fire({ icon: 'info', title: 'No Encontrado', text: `El código "${codigoEscaneado}" no existe.`, timer: 1500, showConfirmButton: false });
+                }
+            }
+        }
+
+        function mostrarProductosVenta(filtro = "") {
+            let lista = document.getElementById("listaProductosInicio"); if(!lista) return;
+            lista.innerHTML = "";
+            
+            let filtrados = INVENTARIO_LOCAL.filter(p => {
+                let buscarEn = p.codigo.toLowerCase() + " " + p.nombre.toLowerCase() + " " + p.modelo.toLowerCase();
+                return buscarEn.includes(filtro.toLowerCase());
+            });
+
+            if(filtrados.length === 0) {
+                lista.innerHTML = "<div class='p-4 text-center text-slate-400 text-xs font-semibold'>Sin productos en catálogo</div>"; return;
+            }
+
+            filtrados.forEach(p => {
+                let div = document.createElement("div");
+                div.className = "flex justify-between items-center p-3 hover:bg-slate-50 cursor-pointer transition rounded-xl border-b border-slate-50";
+                let badgeMod = (p.modelo && p.modelo !== "N/A" && p.modelo !== "-") ? `<span class="bg-amber-100 text-amber-800 text-[9px] font-bold px-1.5 py-0.5 rounded ml-1.5 uppercase">${p.modelo}</span>` : "";
+                let badgeCod = p.codigo ? `<span class="bg-slate-200 text-slate-700 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded mr-2 uppercase">${p.codigo}</span>` : "";
+
+                div.innerHTML = `
+                    <div class="flex items-center gap-1 overflow-hidden">
+                        ${badgeCod}
+                        <div class="truncate">
+                            <p class="font-bold text-slate-800 text-xs uppercase">${p.nombre} ${badgeMod}</p>
+                            <span class="text-[10px] text-slate-400 font-semibold block">Stock: ${p.stock} un.</span>
+                        </div>
+                    </div>
+                    <span class="text-indigo-600 font-black text-xs bg-indigo-50 px-2 py-1 rounded-lg shrink-0">S/. ${p.precio}</span>`;
+                div.onclick = function() { agregarAlCarrito(p); };
+                lista.appendChild(div);
+            });
+        }
+
+        function filtrarProductosInicio(texto) { mostrarProductosVenta(texto); }
+        function abrirModalCarrito() { document.getElementById('modal-carrito').classList.remove('hidden'); renderizarCarrito(); }
+        function cerrarModalCarrito() { document.getElementById('modal-carrito').classList.add('hidden'); }
+
+        function agregarAlCarrito(producto) {
+            let index = CARRITO_ACTUAL.findIndex(item => item.idDoc === producto.idDoc);
+            let nombreCompleto = producto.codigo ? `[${producto.codigo}] ${producto.nombre}` : producto.nombre;
+
+            if (index !== -1) {
+                if (CARRITO_ACTUAL[index].cantidad < producto.stock) CARRITO_ACTUAL[index].cantidad += 1;
+            } else {
+                CARRITO_ACTUAL.push({ idDoc: producto.idDoc, nombre: nombreCompleto, precio: producto.precio, cantidad: 1 });
+            }
+            renderizarCarrito();
+        }
+
+        function cambiarCantidadCarrito(idDoc, delta) {
+            let index = CARRITO_ACTUAL.findIndex(item => item.idDoc === idDoc);
+            if(index !== -1) {
+                let pInv = INVENTARIO_LOCAL.find(i => i.idDoc === idDoc);
+                if (delta > 0 && CARRITO_ACTUAL[index].cantidad >= pInv.stock) return;
+                CARRITO_ACTUAL[index].cantidad += delta;
+                if(CARRITO_ACTUAL[index].cantidad <= 0) CARRITO_ACTUAL.splice(index, 1);
+            }
+            renderizarCarrito();
+        }
+
+        function renderizarCarrito() {
+            let contenedor = document.getElementById("carritoCuerpo"); if(!contenedor) return;
+            contenedor.innerHTML = "";
+            let total = 0, itemsTotales = 0;
+
+            CARRITO_ACTUAL.forEach(item => {
+                let sub = parseFloat(item.precio) * item.cantidad;
+                total += sub; itemsTotales += item.cantidad;
+                let div = document.createElement("div");
+                div.className = "flex justify-between items-center bg-slate-50 p-2.5 rounded-xl text-xs";
+                div.innerHTML = `
+                    <div class="max-w-[50%] truncate"><p class="font-bold text-slate-800 truncate uppercase">${item.nombre}</p></div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="cambiarCantidadCarrito('${item.idDoc}', -1)" class="w-5 h-5 bg-slate-200 font-black rounded-lg">-</button>
+                        <span class="font-black text-slate-800 text-xs w-4 text-center">${item.cantidad}</span>
+                        <button onclick="cambiarCantidadCarrito('${item.idDoc}', 1)" class="w-5 h-5 bg-slate-200 font-black rounded-lg">+</button>
+                    </div>
+                    <span class="font-black text-slate-900 min-w-[55px] text-right">S/. ${sub.toFixed(2)}</span>`;
+                contenedor.appendChild(div);
+            });
+
+            if(CARRITO_ACTUAL.length === 0) contenedor.innerHTML = "<p class='text-slate-400 text-center text-xs py-10'>Lista vacía.</p>";
+            document.getElementById("carritoTotalLabel").innerText = `S/. ${total.toFixed(2)}`;
+            document.getElementById("total-rapido-txt").innerText = `S/. ${total.toFixed(2)}`;
+            document.getElementById("badge-carrito").innerText = itemsTotales;
+        }
+
+        async function registrarProducto() {
+            if(!usuarioActualUid) return;
+            let codigo = document.getElementById("regCodigo").value.trim().toUpperCase();
+            let nombre = document.getElementById("regNombre").value.trim();
+            let precioTxt = document.getElementById("regPrecio").value.trim();
+            let stockTxt = document.getElementById("regStock").value.trim();
+            let especial = document.getElementById("checkEsRepuesto").checked;
+            let modelo = especial ? document.getElementById("regModelo").value.trim().toUpperCase() : "N/A";
+
+            if (!codigo || !nombre || !precioTxt || !stockTxt) return;
+
+            try {
+                await db.collection("inventario").add({
+                    userId: usuarioActualUid, codigo: codigo, nombre: nombre, precio: parseFloat(precioTxt).toFixed(2), stock: parseInt(stockTxt), modelo: modelo
+                });
+                document.getElementById("regCodigo").value = ""; document.getElementById("regNombre").value = ""; 
+                document.getElementById("regPrecio").value = ""; document.getElementById("regStock").value = "10";
+                document.getElementById("checkEsRepuesto").checked = false; document.getElementById("regModelo").value = "";
+                document.getElementById("contenedorSelectorModelos").classList.add("hidden");
+            } catch (err) { console.error(err); }
+        }
+
+        function mostrarInventarioAjustes() {
+            let tbody = document.getElementById("tablaAjustesInventario"); if(!tbody) return;
+            tbody.innerHTML = "";
+            INVENTARIO_LOCAL.forEach((p, index) => {
+                let fila = tbody.insertRow(); fila.className = "hover:bg-slate-50 text-xs";
+                let cCod = fila.insertCell(0); cCod.className = "p-3 font-mono font-bold uppercase"; cCod.contentEditable = "true"; cCod.innerText = p.codigo; cCod.onblur = function() { guardarEdicionDirecta(index, 'codigo', cCod.innerText); };
+                let cNom = fila.insertCell(1); cNom.className = "p-3 font-medium uppercase"; cNom.contentEditable = "true"; cNom.innerText = p.nombre; cNom.onblur = function() { guardarEdicionDirecta(index, 'nombre', cNom.innerText); };
+                let cMod = fila.insertCell(2); cMod.className = "p-3 text-center uppercase"; cMod.contentEditable = "true"; cMod.innerText = p.modelo; cMod.onblur = function() { guardarEdicionDirecta(index, 'modelo', cMod.innerText); };
+                let cPre = fila.insertCell(3); cPre.className = "p-3 font-semibold"; cPre.contentEditable = "true"; cPre.innerText = p.precio; cPre.onblur = function() { guardarEdicionDirecta(index, 'precio', cPre.innerText); };
+                let cSto = fila.insertCell(4); cSto.className = "p-3 font-bold text-emerald-600"; cSto.contentEditable = "true"; cSto.innerText = p.stock; cSto.onblur = function() { guardarEdicionDirecta(index, 'stock', cSto.innerText); };
+                let cAcc = fila.insertCell(5); cAcc.className = "p-3 text-right"; cAcc.innerHTML = `<button class="text-red-500 font-semibold" onclick="eliminarProducto(${index})">Eliminar</button>`;
+            });
+        }
+
+        async function guardarEdicionDirecta(index, campo, valor) {
+            let prod = INVENTARIO_LOCAL[index]; let data = {};
+            if(campo === 'codigo') data.codigo = valor.trim().toUpperCase();
+            if(campo === 'nombre') data.nombre = valor.trim();
+            if(campo === 'modelo') data.modelo = valor.trim().toUpperCase();
+            if(campo === 'precio') data.precio = parseFloat(valor).toFixed(2);
+            if(campo === 'stock') data.stock = parseInt(valor);
+            await db.collection("inventario").doc(prod.idDoc).update(data);
+        }
+
+        async function eliminarProducto(index) {
+            let prod = INVENTARIO_LOCAL[index];
+            let conf = await Swal.fire({ title: '¿Eliminar?', text: prod.nombre, icon: 'warning', showCancelButton: true });
+            if(conf.isConfirmed) await db.collection("inventario").doc(prod.idDoc).delete();
+        }
+
+        async function cambiarNombreBodega() {
+            const { value: nuevo } = await Swal.fire({ title: 'Nombre de la Tienda', input: 'text', inputValue: NOMBRE_BODEGA_LOCAL });
+            if(nuevo) db.collection("configuracion").doc(usuarioActualUid).set({ nombre: nuevo.trim() });
+        }
+
+        function cerrarSesion() { auth.signOut().then(() => { window.location.href = "login.html"; }); }
+    </script>
+</body>
+</html>
