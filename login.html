@@ -18,11 +18,26 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 </head>
-<body class="bg-slate-50 text-slate-800 font-sans min-h-screen flex items-center justify-center px-4">
+<body class="bg-slate-50 text-slate-800 font-sans min-h-screen flex items-center justify-center px-4 relative overflow-hidden">
 
+    <!-- PANTALLA DE BIENVENIDA (SPLASH SCREEN) -->
+    <div id="splash-screen" class="fixed inset-0 bg-slate-900 flex flex-col items-center justify-center z-50 transition-opacity duration-500 ease-out">
+        <div class="text-center space-y-4 animate-bounce">
+            <div class="bg-indigo-600 text-white w-20 h-20 rounded-3xl flex items-center justify-center mx-auto shadow-2xl shadow-indigo-500/50 border border-indigo-400">
+                <i data-lucide="wrench" class="w-10 h-10"></i>
+            </div>
+            <h1 class="text-2xl font-black text-white tracking-tight uppercase">Auto-Parts Market</h1>
+        </div>
+        <div class="absolute bottom-16 flex flex-col items-center space-y-2">
+            <div class="w-6 h-6 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+            <p class="text-xs text-slate-400 font-medium tracking-wider">Bienvenido - Iniciando Sistema...</p>
+        </div>
+    </div>
+
+    <!-- CONTENEDOR DEL LOGIN PRINCIPAL -->
     <div class="bg-white rounded-3xl p-6 md:p-8 border border-slate-200 shadow-xl w-full max-w-md space-y-6">
         
-        <!-- Encabezado / Logo Temporal -->
+        <!-- Encabezado / Logo -->
         <div class="text-center space-y-2">
             <div class="bg-indigo-50 text-indigo-600 w-14 h-14 rounded-2xl flex items-center justify-center mx-auto shadow-sm border border-indigo-100">
                 <i data-lucide="wrench" class="w-7 h-7"></i>
@@ -54,7 +69,7 @@
             </button>
         </form>
 
-        <!-- Botón de instalación nativa (Solo aparece si el teléfono es compatible) -->
+        <!-- Botón de instalación nativa -->
         <div id="contenedor-instalar-app" class="hidden border-t border-slate-100 pt-4 text-center">
             <button onclick="instalarAplicacionNativa()" class="inline-flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold py-2 px-4 rounded-xl border border-emerald-200 transition">
                 <i data-lucide="download" class="w-4 h-4"></i> Instalar como Aplicación móvil
@@ -63,7 +78,7 @@
     </div>
 
     <script>
-        // Configuración de tu misma Base de Datos de Firebase
+        // Configuración de tu Base de Datos de Firebase
         const firebaseConfig = {
             apiKey: "AIzaSyBJKdcy6awuDMuBDOlhGiNLRYqjTzPdx_E",
             authDomain: "web-anonima-d7b3c.firebaseapp.com",
@@ -77,16 +92,24 @@
         firebase.initializeApp(firebaseConfig);
         const auth = firebase.auth();
 
-        // Evitar clic derecho
         document.addEventListener('contextmenu', e => e.preventDefault());
         try { lucide.createIcons(); } catch(e){}
 
-        // Verificar si ya está logueado para mandarlo directo al inventario
+        // CONTROLADOR DE OCULTADO DE LA PANTALLA DE CARGA
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                const splash = document.getElementById('splash-screen');
+                if (splash) {
+                    splash.classList.add('opacity-0');
+                    setTimeout(() => splash.remove(), 500); // Remueve del mapa el Splash tras la animación
+                }
+            }, 1500); // 1.5 segundos de presentación bonita
+        });
+
         auth.onAuthStateChanged((user) => {
             if (user) { window.location.href = "index.html"; }
         });
 
-        // Función para procesar el inicio de sesión
         function manejarLogin(e) {
             e.preventDefault();
             const email = document.getElementById("loginEmail").value.trim();
@@ -106,14 +129,10 @@
                 });
         }
 
-        // ========================================================
-        // LÓGICA DE INSTALACIÓN EN CELULARES (COMPATIBILIDAD APP)
-        // ========================================================
         let eventoInstalacion = null;
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
             eventoInstalacion = e;
-            // Mostrar el botón de instalación en pantalla
             document.getElementById('contenedor-instalar-app').classList.remove('hidden');
         });
 
